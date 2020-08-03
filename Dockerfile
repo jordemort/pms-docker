@@ -1,13 +1,11 @@
-FROM ubuntu:16.04
+FROM nvidia/cuda:11.0-runtime
 
-ARG S6_OVERLAY_VERSION=v1.22.1.0
+ARG S6_OVERLAY_VERSION=v2.0.0.1
 ARG S6_OVERLAY_ARCH=amd64
 ARG PLEX_BUILD=linux-x86_64
 ARG PLEX_DISTRO=debian
 ARG DEBIAN_FRONTEND="noninteractive"
 ENV TERM="xterm" LANG="C.UTF-8" LC_ALL="C.UTF-8"
-
-ENTRYPOINT ["/init"]
 
 RUN \
 # Update and get dependencies
@@ -22,7 +20,7 @@ RUN \
 
 # Fetch and extract S6 overlay
     curl -J -L -o /tmp/s6-overlay-${S6_OVERLAY_ARCH}.tar.gz https://github.com/just-containers/s6-overlay/releases/download/${S6_OVERLAY_VERSION}/s6-overlay-${S6_OVERLAY_ARCH}.tar.gz && \
-    tar xzf /tmp/s6-overlay-${S6_OVERLAY_ARCH}.tar.gz -C / && \
+    tar -xhvz --exclude ./usr/bin/execlineb -f /tmp/s6-overlay-${S6_OVERLAY_ARCH}.tar.gz -C / && \
 
 # Add user
     useradd -U -d /config -s /bin/false plex && \
@@ -56,5 +54,16 @@ COPY root/ /
 RUN \
 # Save version and install
     /installBinary.sh
+
+ADD https://raw.githubusercontent.com/keylase/nvidia-patch/master/patch.sh /usr/local/bin/patch.sh
+ADD https://raw.githubusercontent.com/keylase/nvidia-patch/master/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+#COPY nvdec-transcoder.sh /usr/local/bin/nvdec-transcoder.sh
+
+RUN chmod +x /usr/local/bin/*.sh && \
+    dpkg-divert --add --rename --divert "/usr/lib/plexmediaserver/Plex Transcoder2" "/usr/lib/plexmediaserver/Plex Transcoder"
+
+COPY ["nvdec-transcoder.sh", "/usr/lib/plexmediaserver/Plex Transcoder"]
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh", "/init"]
 
 HEALTHCHECK --interval=5s --timeout=2s --retries=20 CMD /healthcheck.sh || exit 1
